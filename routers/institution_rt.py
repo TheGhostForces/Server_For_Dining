@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
-from Server_For_Dining.database.repository import InstitutionRepository
-from Server_For_Dining.schemas import InstitutionsUniversal
-from Server_For_Dining.security.auth import require_role
+from database.repository import InstitutionRepository
+from schemas import InstitutionsUniversal
+from security.auth import require_role
 
 router = APIRouter(
     prefix="/institution",

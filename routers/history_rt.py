@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
-from Server_For_Dining.database.repository import HistoryRepository
-from Server_For_Dining.schemas import UniversalOrderHistory
-from Server_For_Dining.security.auth import require_role
+from database.repository import HistoryRepository
+from schemas import UniversalOrderHistory
+from security.auth import require_role
 
 router = APIRouter(
     prefix="/history",

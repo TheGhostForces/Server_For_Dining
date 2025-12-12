@@ -1,7 +1,7 @@
 from fastapi import HTTPException, status, Request, Depends
 from jose import jwt, JWTError
-from Server_For_Dining.database import repository
-from Server_For_Dining import settings
+from database import repository
+import settings
 
 
 def create_access_token(data: dict):

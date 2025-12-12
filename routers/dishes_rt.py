@@ -1,9 +1,9 @@
 from datetime import date, timedelta, datetime
 from fastapi import APIRouter, HTTPException, Depends, Query
-from Server_For_Dining.database.repository import DishesRepository
-from Server_For_Dining.schemas import DishAdd, DishRequest, Date, UniversalDish, UniversalDishes, UniversalWithID, Universal, \
+from database.repository import DishesRepository
+from schemas import DishAdd, DishRequest, Date, UniversalDish, UniversalDishes, UniversalWithID, Universal, \
     UniversalListDish
-from Server_For_Dining.security.auth import require_role
+from security.auth import require_role
 
 
 router = APIRouter(

@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from .models import Model
-from Server_For_Dining.settings import engine
+from settings import engine
 
 
 async_engine = create_async_engine(

@@ -1,10 +1,10 @@
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Response
-from Server_For_Dining.database.repository import StudentRepository, TemporaryCodeRepository, StudentBasketRepository
-from Server_For_Dining.libs.generator import generate_numeric_code, verify_password
-from Server_For_Dining.libs.sender import send_email
-from Server_For_Dining.schemas import Token, UniversalStudent
-from Server_For_Dining.security.auth import create_access_token
+from database.repository import StudentRepository, TemporaryCodeRepository, StudentBasketRepository
+from libs.generator import generate_numeric_code, verify_password
+from libs.sender import send_email
+from schemas import Token, UniversalStudent
+from security.auth import create_access_token
 
 
 router = APIRouter(

@@ -1,7 +1,7 @@
 from datetime import datetime, date
 from sqlalchemy import ForeignKey, Enum, Date, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from Server_For_Dining.database.enums import StatusOrder
+from database.enums import StatusOrder
 
 
 class Model(DeclarativeBase):

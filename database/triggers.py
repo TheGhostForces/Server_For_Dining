@@ -1,5 +1,5 @@
 from sqlalchemy import text
-from Server_For_Dining.database.db import new_session
+from database.db import new_session
 
 
 async def create_triggers():

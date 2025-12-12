@@ -4,11 +4,11 @@ from fastapi import HTTPException
 from sqlalchemy import select, update, delete, func, and_, extract
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import selectinload, joinedload
-from Server_For_Dining.database.db import new_session
-from Server_For_Dining.database.enums import StatusOrder
-from Server_For_Dining.database.models import StudentsOrm, TemporaryCodeOrm, DishesOrm, ShoppingCartOrm, ShoppingCartDishesOrm, OrderOrm, \
+from database.db import new_session
+from database.enums import StatusOrder
+from database.models import StudentsOrm, TemporaryCodeOrm, DishesOrm, ShoppingCartOrm, ShoppingCartDishesOrm, OrderOrm, \
     OrderDishOrm, StudentQRCodeOrm, ScheduleDishesOrm, EducationInstitutionOrm, HistoryScheduleOrm
-from Server_For_Dining.schemas import DishAdd, Date, DishRequest, DishToBasket
+from schemas import DishAdd, Date, DishRequest, DishToBasket
 
 
 class StudentRepository:

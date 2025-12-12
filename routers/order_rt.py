@@ -1,8 +1,8 @@
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
-from Server_For_Dining.database.repository import OrdersRepository
-from Server_For_Dining.schemas import Universal, OrderSchema, OrdersSchema
-from Server_For_Dining.security.auth import require_role
+from database.repository import OrdersRepository
+from schemas import Universal, OrderSchema, OrdersSchema
+from security.auth import require_role
 
 router = APIRouter(
     prefix="/orders",

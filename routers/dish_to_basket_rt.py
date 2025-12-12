@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
-from Server_For_Dining.database.repository import BasketDishesRepository, DishesRepository
-from Server_For_Dining.schemas import DishToBasket, Universal, DishListBasket
-from Server_For_Dining.security.auth import require_role
+from database.repository import BasketDishesRepository, DishesRepository
+from schemas import DishToBasket, Universal, DishListBasket
+from security.auth import require_role
 
 
 router = APIRouter(

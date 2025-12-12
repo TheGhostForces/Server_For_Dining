@@ -1,5 +1,5 @@
 import yagmail
-from Server_For_Dining.settings import USER_FOR_SENDER, PASSWORD_FOR_SENDER
+from settings import USER_FOR_SENDER, PASSWORD_FOR_SENDER
 
 
 def send_email(email: str, code: int):
