@@ -8,7 +8,7 @@ from database.db import new_session
 from database.enums import StatusOrder
 from database.models import StudentsOrm, TemporaryCodeOrm, DishesOrm, ShoppingCartOrm, ShoppingCartDishesOrm, OrderOrm, \
     OrderDishOrm, StudentQRCodeOrm, ScheduleDishesOrm, EducationInstitutionOrm, HistoryScheduleOrm
-from schemas import DishAdd, Date, DishRequest, DishToBasket
+from schemas import DishAdd, DishRequest, DishToBasket
 
 
 class StudentRepository:
@@ -224,10 +224,8 @@ class DishesRepository:
             return dish.id
 
     @classmethod
-    async def set_dishes_on_day(cls, institution_id: int, data: DishRequest, day: Date):
+    async def set_dishes_on_day(cls, institution_id: int, data: DishRequest, target_date: date):
         async with new_session() as session:
-            target_date = date(day.year, day.month, day.day)
-
             dish_ids = [item.dish_id for item in data.items]
 
             existing_dishes = await session.execute(
@@ -799,56 +797,50 @@ class OrdersRepository:
     @classmethod
     async def undo_order(cls, student_id: int):
         async with new_session() as session:
-            # 1. Получаем заказ и его блюда
             query = (
-                select(OrderOrm, OrderDishOrm)
-                .join(OrderDishOrm, OrderOrm.id == OrderDishOrm.order_id)
+                select(OrderOrm)
                 .where(
                     OrderOrm.student_id == student_id,
                     OrderOrm.order_status == StatusOrder.IN_PROGRESS
                 )
             )
             result = await session.execute(query)
-            order_data = result.all()
+            orders = result.scalars().all()
 
-            if not order_data:
+            if not orders:
                 raise ValueError("No order in progress found for this student")
 
-            order = order_data[0].OrderOrm
             today = date.today() + timedelta(days=1)
 
-            # 2. Подготовка данных для обновления ScheduleDishesOrm
-            schedule_updates = []
-            for row in order_data:
-                order_dish = row.OrderDishOrm
-                schedule_updates.append({
-                    'dish_id': order_dish.dish_id,
-                    'date': today,
-                    'quantity': order_dish.cart_quantity
-                })
-
-            # 3. Пакетное обновление ScheduleDishesOrm
-            for update_data in schedule_updates:
-                stmt = insert(ScheduleDishesOrm).values(**update_data)
-
-                # Для PostgreSQL
-                stmt = stmt.on_conflict_do_update(
-                    constraint='uq_dish_date',
-                    set_=dict(quantity=ScheduleDishesOrm.quantity + update_data['quantity'])
+            for order in orders:
+                query_dishes = (
+                    select(OrderDishOrm)
+                    .where(OrderDishOrm.order_id == order.id)
                 )
+                result_dishes = await session.execute(query_dishes)
+                order_dishes = result_dishes.scalars().all()
 
-                await session.execute(stmt)
+                for order_dish in order_dishes:
+                    stmt = insert(ScheduleDishesOrm).values(
+                        dish_id=order_dish.dish_id,
+                        date=today,
+                        quantity=order_dish.cart_quantity
+                    ).on_conflict_do_update(
+                        constraint='uq_dish_date',
+                        set_=dict(quantity=ScheduleDishesOrm.quantity + order_dish.cart_quantity)
+                    )
+                    await session.execute(stmt)
 
-            # 4. Обновляем статус заказа
-            query_update = (
-                update(OrderOrm)
-                .where(OrderOrm.id == order.id)
-                .values(
-                    order_status=StatusOrder.CANCELLED,
-                    updated_at=datetime.now()
+                query_update = (
+                    update(OrderOrm)
+                    .where(OrderOrm.id == order.id)
+                    .values(
+                        order_status=StatusOrder.CANCELLED,
+                        updated_at=datetime.now()
+                    )
                 )
-            )
-            await session.execute(query_update)
+                await session.execute(query_update)
+
             await session.commit()
 
     @classmethod

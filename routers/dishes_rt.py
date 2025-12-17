@@ -1,7 +1,7 @@
 from datetime import date, timedelta, datetime
 from fastapi import APIRouter, HTTPException, Depends, Query
 from database.repository import DishesRepository
-from schemas import DishAdd, DishRequest, Date, UniversalDish, UniversalDishes, UniversalWithID, Universal, \
+from schemas import DishAdd, DishRequest, UniversalDish, UniversalDishes, UniversalWithID, Universal, \
     UniversalListDish
 from security.auth import require_role
 
@@ -75,10 +75,21 @@ async def get_all_dishes(
 @router.put("/dishes", response_model=Universal, tags=["Оператор раздачи"])
 async def set_dishes_on_day(
         dishes: DishRequest,
-        day: Date,
+        target_date: date,
         operator = Depends(require_role("operator"))
 ):
-    # добавить проверку на то, чтобы количество устанавливаемых блюд не было равно 0
-    # добавить проверку на неделю
-    await DishesRepository.set_dishes_on_day(operator.institution_id, dishes, day)
+    current_day = date.today()
+    if target_date <= current_day:
+        raise HTTPException(status_code=400, detail="You can not assign past dates")
+    if target_date > current_day + timedelta(days=7):
+        raise HTTPException(status_code=400, detail="You can only bet for a week.")
+    await DishesRepository.set_dishes_on_day(operator.institution_id, dishes, target_date)
     return {"Ok": True}
+
+@router.get("/date_dishes_operator", tags=["Оператор раздачи"])
+async def get_dishes_by_date(
+        target_date: date,
+        operator = Depends(require_role("operator"))
+):
+    dishes = await DishesRepository.get_fixed_dishes_by_date(operator.institution_id, target_date)
+    return {"Ok": True, "dishes": dishes}

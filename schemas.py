@@ -1,5 +1,5 @@
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import date, datetime
 
 
@@ -15,10 +15,10 @@ class DishAdd(BaseModel):
     category: str
     fixed_price: int
     institution_id: int
+    img_url: Optional[str] = None
 
 class Dish(DishAdd):
     id: int
-    img_url: Optional[str] = None
 
 class Orders(Dish):
     order_id: int
@@ -59,15 +59,10 @@ class OrderHistory(BaseModel):
 
 class DishToBasket(BaseModel):
     dish_id: int
-    cart_quantity: int
+    cart_quantity: int = Field(..., gt=0, description="Количество должно быть больше 0")
 
 class DishRequest(BaseModel):
     items: List[DishToBasket]
-
-class Date(BaseModel):
-    day: int
-    month: int
-    year: int
 
 class Universal(BaseModel):
     Ok: bool = True
