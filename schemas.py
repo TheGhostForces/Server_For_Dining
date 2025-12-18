@@ -17,6 +17,12 @@ class DishAdd(BaseModel):
     institution_id: int
     img_url: Optional[str] = None
 
+class DishUpdate(BaseModel):
+    dish_name: Optional[str] = None
+    category: Optional[str] = None
+    fixed_price: Optional[int] = None
+    img_url: Optional[str] = None
+
 class Dish(DishAdd):
     id: int
 

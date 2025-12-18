@@ -12,14 +12,14 @@ class StudentsOrm(Model):
     __tablename__ = "Students"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    student_id_card: Mapped[str] = mapped_column(nullable=False)
+    student_id_card: Mapped[str] = mapped_column(nullable=False) # unique
     full_name: Mapped[str] = mapped_column(nullable=False)
     date_start: Mapped[date] = mapped_column(Date, nullable=False)
     date_end: Mapped[date] = mapped_column(Date, nullable=False)
     free_food: Mapped[bool] = mapped_column(nullable=False)
     rating: Mapped[int] = mapped_column(default=0, nullable=False)
     # возможно, стоит добавить название группы студента
-    email: Mapped[str] = mapped_column(nullable=False)
+    email: Mapped[str] = mapped_column(nullable=False) # unique
     role: Mapped[str] = mapped_column(nullable=False)
 
     institution_id: Mapped[int] = mapped_column(ForeignKey("EducationInstitution.id"), nullable=False)

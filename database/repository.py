@@ -8,7 +8,7 @@ from database.db import new_session
 from database.enums import StatusOrder
 from database.models import StudentsOrm, TemporaryCodeOrm, DishesOrm, ShoppingCartOrm, ShoppingCartDishesOrm, OrderOrm, \
     OrderDishOrm, StudentQRCodeOrm, ScheduleDishesOrm, EducationInstitutionOrm, HistoryScheduleOrm
-from schemas import DishAdd, DishRequest, DishToBasket
+from schemas import DishAdd, DishRequest, DishToBasket, DishUpdate
 
 
 class StudentRepository:
@@ -124,6 +124,50 @@ class DishesRepository:
                 query = query.where(DishesOrm.dish_name == dish_name)
             result = await session.execute(query)
             return result.scalar_one_or_none()
+
+    @classmethod
+    async def delete_dish(cls, dish_id: int):
+        async with new_session() as session:
+            try:
+                query = delete(DishesOrm).where(DishesOrm.id == dish_id)
+
+                await session.execute(query)
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                return None
+
+    @classmethod
+    async def update_dish(cls, dish_id: int, data: DishUpdate):
+        async with new_session() as session:
+            try:
+                update_data = {}
+
+                if data.dish_name is not None:
+                    update_data["dish_name"] = data.dish_name
+                if data.category is not None:
+                    update_data["category"] = data.category
+                if data.fixed_price is not None:
+                    update_data["fixed_price"] = data.fixed_price
+                if data.img_url is not None:
+                    update_data["img_url"] = data.img_url
+
+                if not update_data:
+                    return None
+
+                query = update(DishesOrm).where(DishesOrm.id == dish_id).values(**update_data)
+
+                await session.execute(query)
+                await session.commit()
+
+                result = await session.get(DishesOrm, dish_id)
+                return result
+
+            except Exception:
+                await session.rollback()
+                return None
+
+
 
     @classmethod
     async def get_dishes(cls,

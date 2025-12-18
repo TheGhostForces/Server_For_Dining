@@ -2,7 +2,7 @@ from datetime import date, timedelta, datetime
 from fastapi import APIRouter, HTTPException, Depends, Query
 from database.repository import DishesRepository
 from schemas import DishAdd, DishRequest, UniversalDish, UniversalDishes, UniversalWithID, Universal, \
-    UniversalListDish
+    UniversalListDish, DishUpdate
 from security.auth import require_role
 
 
@@ -40,6 +40,45 @@ async def create_dish(
             )
     dish_id = await DishesRepository.create_one_dish(dish)
     return {"Ok":True, "id": dish_id}
+
+@router.delete("/dish", response_model=Universal, tags=["Админ"])
+async def delete_dish(
+        dish_id: int = None,
+        dish_name: str = None,
+        institution_id: int = None,
+        admin = Depends(require_role("admin"))
+):
+    if dish_id is None and dish_name is None:
+        raise HTTPException(status_code=400, detail="Cannot be deleted without parameters")
+    if dish_name and institution_id is None:
+        raise HTTPException(status_code=400, detail="Cannot be deleted without institution_id")
+    dish = await DishesRepository.get_dish(dish_id, institution_id, dish_name)
+    if dish is None:
+        raise HTTPException(status_code=404, detail="Dish not found")
+    dish = await DishesRepository.delete_dish(dish.id)
+    if dish is None:
+        raise HTTPException(status_code=400, detail="Dishes cannot be deleted")
+    return {"Ok": True}
+
+@router.patch("/dish", response_model=Universal, tags=["Админ"])
+async def update_dish(
+        data: DishUpdate,
+        dish_id: int = None,
+        dish_name: str = None,
+        institution_id: int = None,
+        admin = Depends(require_role("admin"))
+):
+    if dish_id is None and dish_name is None:
+        raise HTTPException(status_code=400, detail="Cannot be deleted without parameters")
+    if dish_name and institution_id is None:
+        raise HTTPException(status_code=400, detail="Cannot be deleted without institution_id")
+    dish = await DishesRepository.get_dish(dish_id, institution_id, dish_name)
+    if dish is None:
+        raise HTTPException(status_code=404, detail="Dish not found")
+    dish = await DishesRepository.update_dish(dish.id, data)
+    if dish is None:
+        raise HTTPException(status_code=400, detail="Dishes cannot be updated")
+    return {"Ok": True}
 
 @router.get("/dishes_tomorrow", tags=["Студент"], response_model=UniversalDishes)
 async def get_dishes_tomorrow(
