@@ -89,7 +89,6 @@ async def get_dishes_tomorrow(
         institution_id=student.institution_id,
         next_day=date_tomorrow
     )
-    # сделать проверку на количество, если количество равно 0, то не отдавать данные
     return {"Ok": True, "dishes": dishes}
 
 @router.get("/date_dishes", tags=["Поставщик"], response_model=UniversalDishes)

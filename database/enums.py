@@ -10,4 +10,4 @@ class CategoryForDishes(enum.Enum):
     Second = "Второе"
     Drink = "Напитки"
     Dessert = "Десерт"
-    # будет больше
+    Snacks = "Снеки"

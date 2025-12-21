@@ -20,8 +20,8 @@ async def create_order(
 async def undo_order(
         student = Depends(require_role("student"))
 ):
-    # if datetime.today().hour >= 16:
-    #     raise HTTPException(status_code=400, detail="Not enough time")
+    if datetime.today().hour >= 16:
+        raise HTTPException(status_code=400, detail="Not enough time")
     await OrdersRepository.undo_order(student.id)
     return {"Ok": True}
 

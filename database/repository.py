@@ -167,8 +167,6 @@ class DishesRepository:
                 await session.rollback()
                 return None
 
-
-
     @classmethod
     async def get_dishes(cls,
                          dish_id: int = None,
@@ -197,7 +195,8 @@ class DishesRepository:
                 .join(DishesOrm)
                 .where(
                     ScheduleDishesOrm.date == next_day,
-                    DishesOrm.institution_id == institution_id
+                    DishesOrm.institution_id == institution_id,
+                    ScheduleDishesOrm.quantity != 0
                 )
                 .options(joinedload(ScheduleDishesOrm.dish))
             )
@@ -399,6 +398,12 @@ class BasketDishesRepository:
             if not schedule_dish:
                 raise HTTPException(status_code=404, detail="No schedule found for this dish")
 
+            if data.cart_quantity > schedule_dish.quantity:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Requested quantity ({data.cart_quantity}) exceeds available quantity ({schedule_dish.quantity})"
+                )
+
             dish_price = schedule_dish.dish.fixed_price
 
             query = select(ShoppingCartOrm).where(ShoppingCartOrm.student_id == student_id)
@@ -453,7 +458,6 @@ class BasketDishesRepository:
                     raise HTTPException(status_code=400, detail="Total order amount exceeds 1000")
 
                 existing_item.cart_quantity = new_quantity
-                dish_basket_id = existing_item.id
             else:
                 dish_basket = ShoppingCartDishesOrm(
                     shoppingcart_id=shopping_cart.id,
@@ -461,7 +465,6 @@ class BasketDishesRepository:
                     cart_quantity=data.cart_quantity
                 )
                 session.add(dish_basket)
-                dish_basket_id = dish_basket.id
 
             stmt = update(
                 ShoppingCartOrm
@@ -510,7 +513,6 @@ class BasketDishesRepository:
             if result.rowcount == 0:
                 raise HTTPException(status_code=404, detail="Dish not found in basket")
 
-            # Обновляем время изменения корзины
             stmt = update(
                 ShoppingCartOrm
             ).where(

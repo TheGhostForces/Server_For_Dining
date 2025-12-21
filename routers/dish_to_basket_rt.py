@@ -24,7 +24,6 @@ async def add_dish_to_basket(
         data: DishToBasket,
         student = Depends(require_role("student"))
 ):
-    # добавить проверку на сравнение количества в БД и того числа, которое вводить пользователь
     dish = await DishesRepository.get_dish(dish_id=data.dish_id)
     if dish is None:
         raise HTTPException(status_code=404, detail="Dish not found")
