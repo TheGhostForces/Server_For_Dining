@@ -1,39 +1,44 @@
 import hashlib
 from datetime import timedelta, datetime, date
+from typing import Optional, List
 from fastapi import HTTPException
-from sqlalchemy import select, update, delete, func, and_, extract
+from sqlalchemy import select, update, delete, func, and_, extract, or_, exists
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import selectinload, joinedload
 from database.db import new_session
 from database.enums import StatusOrder
 from database.models import StudentsOrm, TemporaryCodeOrm, DishesOrm, ShoppingCartOrm, ShoppingCartDishesOrm, OrderOrm, \
-    OrderDishOrm, StudentQRCodeOrm, ScheduleDishesOrm, EducationInstitutionOrm, HistoryScheduleOrm
-from schemas import DishAdd, DishRequest, DishToBasket, DishUpdate
+    OrderDishOrm, ScheduleDishesOrm, EducationInstitutionOrm, UsersOrm
+from schemas import DishRequest, DishToBasket, DishUpdate, DishCreateList, UserSchema, StudentSchema
 
 
-class StudentRepository:
+class UsersRepository:
     @classmethod
-    async def get_student(cls, student_id: int = None, student_card_id: str = None):
+    async def get_user(cls, user_id: int = None, login: str = None):
+        async with new_session() as session:
+            query = select(UsersOrm)
+            if user_id is not None:
+                query = query.where(UsersOrm.id == user_id)
+            if login is not None:
+                query = query.where(UsersOrm.login == login)
+            result = await session.execute(query)
+            return result.scalar_one_or_none()
+
+    @classmethod
+    async def get_student(cls, user_id: int = None, student_id: int = None):
         async with new_session() as session:
             query = select(StudentsOrm)
+            if user_id is not None:
+                query = query.where(StudentsOrm.user_id == user_id)
             if student_id is not None:
                 query = query.where(StudentsOrm.id == student_id)
-            if student_card_id is not None:
-                query = query.where(StudentsOrm.student_id_card == student_card_id)
             result = await session.execute(query)
             return result.scalar_one_or_none()
 
 class TemporaryCodeRepository:
     @classmethod
-    async def set_temporary_code(cls, student_card_id: str, code: str):
+    async def set_temporary_code(cls, user_id: int, code: str):
         async with new_session() as session:
-            stmt = select(StudentsOrm).where(StudentsOrm.student_id_card == student_card_id)
-            result = await session.execute(stmt)
-            student = result.scalar_one_or_none()
-
-            if not student:
-                raise ValueError(f"Студент с card_id {student_card_id} не найден")
-
             code_hash = hashlib.sha256(code.encode()).hexdigest()
 
             now = datetime.now()
@@ -45,63 +50,55 @@ class TemporaryCodeRepository:
                 created_at=now,
                 expires_at=expires_at,
                 used_at=None,
-                student_id=student.id
+                user_id=user_id
             )
 
             session.add(temporary_code)
             await session.flush()
             await session.commit()
-
-            return temporary_code.id
-
+            return temporary_code
 
     @classmethod
-    async def get_temporary_code(cls, student_id: int, temporary_code_id: int):
+    async def get_temporary_code(cls, user_id: int, temporary_code_id: int = None):
         async with new_session() as session:
             stmt = select(TemporaryCodeOrm).where(
-                TemporaryCodeOrm.id == temporary_code_id,
-                TemporaryCodeOrm.student_id == student_id
+                TemporaryCodeOrm.user_id == user_id,
+                TemporaryCodeOrm.expires_at > datetime.now(),
+                TemporaryCodeOrm.used_at == None
             )
+
+            if temporary_code_id is not None:
+                stmt = stmt.where(TemporaryCodeOrm.id == temporary_code_id)
 
             result = await session.execute(stmt)
             return result.scalar_one_or_none()
 
     @classmethod
-    async def increment_attempts(cls, student_id: int, temporary_code_id: int):
+    async def extend_expires_at(cls, temporary_code_id: int):
         async with new_session() as session:
             stmt = update(TemporaryCodeOrm).where(
-                TemporaryCodeOrm.id == temporary_code_id,
-                TemporaryCodeOrm.student_id == student_id
+                TemporaryCodeOrm.id == temporary_code_id
+            ).values(expires_at=datetime.now() + timedelta(minutes=2))
+            await session.execute(stmt)
+            await session.commit()
+
+    @classmethod
+    async def increment_attempts(cls, temporary_code_id: int):
+        async with new_session() as session:
+            stmt = update(TemporaryCodeOrm).where(
+                TemporaryCodeOrm.id == temporary_code_id
             ).values(attempts=TemporaryCodeOrm.attempts + 1)
             await session.execute(stmt)
             await session.commit()
 
     @classmethod
-    async def mark_code_as_used(cls, student_id: int, temporary_code_id: int):
+    async def mark_code_as_used(cls, temporary_code_id: int):
         async with new_session() as session:
             stmt = update(TemporaryCodeOrm).where(
-                TemporaryCodeOrm.id == temporary_code_id,
-                TemporaryCodeOrm.student_id == student_id
+                TemporaryCodeOrm.id == temporary_code_id
             ).values(used_at=datetime.now())
             await session.execute(stmt)
             await session.commit()
-
-class QRCodeRepository:
-    @classmethod
-    async def get_qrcode(cls, qrcode_id: int = None, student_id: int = None):
-        async with new_session() as session:
-            query = select(StudentQRCodeOrm)
-            if qrcode_id is not None:
-                query = query.where(StudentQRCodeOrm.id == qrcode_id)
-            if student_id is not None:
-                query = query.where(StudentQRCodeOrm.student_id == student_id)
-            result = await session.execute(query)
-            return result.scalar_one_or_none()
-
-    @classmethod
-    async def set_qrcode(cls, qrcode_url: str):
-        async with new_session() as session:
-            pass
 
 class InstitutionRepository:
     @classmethod
@@ -126,15 +123,81 @@ class DishesRepository:
             return result.scalar_one_or_none()
 
     @classmethod
-    async def delete_dish(cls, dish_id: int):
+    async def delete_dishes(
+            cls,
+            institution_id: int,
+            dish_ids: Optional[List[int]] = None,
+            dish_names: Optional[List[str]] = None
+    ):
         async with new_session() as session:
             try:
-                query = delete(DishesOrm).where(DishesOrm.id == dish_id)
+                if not dish_ids and not dish_names:
+                    return 0, [], []
 
-                await session.execute(query)
-                await session.commit()
-            except Exception:
+                not_found_ids = []
+                not_found_names = []
+
+                if dish_ids and len(dish_ids) > 0:
+                    check_ids_query = select(DishesOrm.id).where(
+                        and_(
+                            DishesOrm.institution_id == institution_id,
+                            DishesOrm.id.in_(dish_ids)
+                        )
+                    )
+                    result = await session.execute(check_ids_query)
+                    existing_ids = {row[0] for row in result.fetchall()}
+                    not_found_ids = [did for did in dish_ids if did not in existing_ids]
+
+                if dish_names and len(dish_names) > 0:
+                    check_names_query = select(DishesOrm.dish_name).where(
+                        and_(
+                            DishesOrm.institution_id == institution_id,
+                            DishesOrm.dish_name.in_(dish_names)
+                        )
+                    )
+                    result = await session.execute(check_names_query)
+                    existing_names = {row[0] for row in result.fetchall()}
+                    not_found_names = [name for name in dish_names if name not in existing_names]
+
+                if (dish_ids and len(dish_ids) == len(not_found_ids)) and \
+                        (dish_names and len(dish_names) == len(not_found_names)):
+                    return 0, not_found_ids, not_found_names
+
+                update_query = update(DishesOrm).where(
+                    DishesOrm.institution_id == institution_id
+                ).values(is_active=False)
+
+                conditions = []
+                if dish_ids and len(dish_ids) > 0:
+                    existing_ids_list = [did for did in dish_ids if did not in not_found_ids]
+                    if existing_ids_list:
+                        conditions.append(DishesOrm.id.in_(existing_ids_list))
+
+                if dish_names and len(dish_names) > 0:
+                    existing_names_list = [name for name in dish_names if name not in not_found_names]
+                    if existing_names_list:
+                        conditions.append(DishesOrm.dish_name.in_(existing_names_list))
+
+                if conditions:
+                    if len(conditions) > 1:
+                        update_query = update_query.where(conditions[0] | conditions[1])
+                    else:
+                        update_query = update_query.where(conditions[0])
+
+                    update_query = update_query.where(DishesOrm.is_active == True)
+
+                    update_result = await session.execute(update_query)
+                    await session.commit()
+                    updated_count = update_result.rowcount
+
+                    return updated_count, not_found_ids, not_found_names
+                else:
+                    await session.rollback()
+                    return 0, not_found_ids, not_found_names
+
+            except Exception as e:
                 await session.rollback()
+                print(f"Error deactivating dishes: {e}")
                 return None
 
     @classmethod
@@ -175,7 +238,7 @@ class DishesRepository:
                          category: str = None
 ):
         async with new_session() as session:
-            query = select(DishesOrm)
+            query = select(DishesOrm).where(DishesOrm.is_active == True)
             if dish_id is not None:
                 query = query.where(DishesOrm.id == dish_id)
             if institution_id is not None:
@@ -222,13 +285,13 @@ class DishesRepository:
     async def get_fixed_dishes_by_date(cls, institution_id: int, day: date):
         async with new_session() as session:
             query = (
-                select(HistoryScheduleOrm)
+                select(ScheduleDishesOrm)
                 .join(DishesOrm)
                 .where(
-                    HistoryScheduleOrm.date == day,
+                    ScheduleDishesOrm.date == day,
                     DishesOrm.institution_id == institution_id
                 )
-                .options(joinedload(HistoryScheduleOrm.dish))
+                .options(joinedload(ScheduleDishesOrm.dish))
             )
 
             result = await session.execute(query)
@@ -254,17 +317,114 @@ class DishesRepository:
                 })
             return formatted_result
 
+    @classmethod
+    async def get_all_dishes_with_fixed_by_date(cls, institution_id: int, day: date):
+        async with new_session() as session:
+            query = (
+                select(DishesOrm, ScheduleDishesOrm)
+                .outerjoin(
+                    ScheduleDishesOrm,
+                    and_(
+                        ScheduleDishesOrm.dish_id == DishesOrm.id,
+                        ScheduleDishesOrm.date == day
+                    )
+                )
+                .where(
+                    DishesOrm.institution_id == institution_id,
+                    DishesOrm.is_active == True
+                )
+                .order_by(DishesOrm.category, DishesOrm.dish_name)
+            )
+
+            result = await session.execute(query)
+            rows = result.all()
+
+            if not rows:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"No active dishes found for institution {institution_id}"
+                )
+
+            formatted_result = []
+            for dish, schedule_dish in rows:
+                quantity = schedule_dish.quantity if schedule_dish else 0
+                total_quantity = schedule_dish.total_quantity if schedule_dish else 0
+
+                formatted_result.append({
+                    "dish_id": dish.id,
+                    "dish_name": dish.dish_name,
+                    "category": dish.category,
+                    "quantity": quantity,
+                    "total_quantity": total_quantity,
+                    "fixed_price": dish.fixed_price,
+                    "img_url": dish.img_url,
+                })
+            return formatted_result
+
 
     @classmethod
-    async def create_one_dish(cls, data: DishAdd):
+    async def create_many_dishes(cls, institution_id: int, data: DishCreateList):
         async with new_session() as session:
-            dish_dict = data.model_dump()
+            dish_names = [item.dish_name.strip() for item in data.items if item.dish_name]
+            if not dish_names:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No dish names provided"
+                )
 
-            dish = DishesOrm(**dish_dict)
-            session.add(dish)
-            await session.flush()
+            existing_dishes = await session.execute(
+                select(DishesOrm.dish_name).where(
+                    DishesOrm.dish_name.in_(dish_names),
+                    DishesOrm.institution_id == institution_id
+                )
+            )
+            existing_dish_names = {dish_name for (dish_name,) in existing_dishes}
+
+            dishes_to_insert = []
+            duplicate_names = []
+
+            for item in data.items:
+                dish_name = item.dish_name.strip()
+                if not dish_name:
+                    continue
+
+                if dish_name in existing_dish_names:
+                    duplicate_names.append(dish_name)
+                else:
+                    dish_data = item.model_dump()
+                    dish_data["institution_id"] = institution_id
+                    dishes_to_insert.append(dish_data)
+                    existing_dish_names.add(dish_name)
+
+            if not dishes_to_insert:
+                if duplicate_names:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"All dishes already exist: {', '.join(duplicate_names)}"
+                    )
+                raise HTTPException(
+                    status_code=400,
+                    detail="No valid dishes to add"
+                )
+
+            result = await session.execute(
+                insert(DishesOrm).returning(DishesOrm.id),
+                dishes_to_insert
+            )
+            created_dish_ids = result.scalars().all()
+
             await session.commit()
-            return dish.id
+
+            response_data = {
+                "created_dish_ids": created_dish_ids,
+                "created_count": len(created_dish_ids),
+            }
+
+            if duplicate_names:
+                response_data["duplicate_dishes"] = duplicate_names
+                response_data["duplicate_count"] = len(duplicate_names)
+
+            return response_data
 
     @classmethod
     async def set_dishes_on_day(cls, institution_id: int, data: DishRequest, target_date: date):
@@ -274,7 +434,8 @@ class DishesRepository:
             existing_dishes = await session.execute(
                 select(DishesOrm.id).where(
                     DishesOrm.id.in_(dish_ids),
-                    DishesOrm.institution_id == institution_id
+                    DishesOrm.institution_id == institution_id,
+                    DishesOrm.is_active == True
                 )
             )
             existing_dish_ids = {dish_id for (dish_id,) in existing_dishes}
@@ -283,7 +444,7 @@ class DishesRepository:
             if invalid_dish_ids:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Incorrect dish for institution"
+                    detail=f"Incorrect any dish for institution or inactive" # добавить конкртеное обозначение из-за чего ошибка
                 )
 
             for item in data.items:
@@ -297,11 +458,13 @@ class DishesRepository:
 
                 if existing_schedule:
                     existing_schedule.quantity = item.cart_quantity
+                    existing_schedule.total_quantity = item.cart_quantity
                 else:
                     schedule_dish = ScheduleDishesOrm(
                         date=target_date,
                         dish_id=item.dish_id,
-                        quantity=item.cart_quantity
+                        quantity=item.cart_quantity,
+                        total_quantity=item.cart_quantity,
                     )
                     session.add(schedule_dish)
 
@@ -622,10 +785,26 @@ class BasketDishesRepository:
             await session.commit()
 
     @classmethod
-    async def clear_all_baskets(cls):
+    async def expired_all_orders_and_clear_all_baskets(cls):
         async with new_session() as session:
+            query = update(OrderOrm).where(
+                OrderOrm.order_status == StatusOrder.IN_PROGRESS,
+                OrderOrm.created_at <= datetime.now() - timedelta(days=1)
+            ).values(
+                order_status=StatusOrder.EXPIRED,
+                updated_at=datetime.now()
+            )
+            result = await session.execute(query)
+            expired_count = result.rowcount
+
             query = delete(ShoppingCartDishesOrm)
-            await session.execute(query)
+            result = await session.execute(query)
+            baskets_count = result.rowcount
+
+            print(f"[{datetime.now()}] Произошла очистка: "
+                  f"истекло {expired_count} заказов, "
+                  f"очищено {baskets_count} блюд из корзин")
+
             await session.commit()
 
 class OrdersRepository:
@@ -729,13 +908,22 @@ class OrdersRepository:
                     detail="No available dishes found in cart for tomorrow's order"
                 )
 
+            import time
+            import random
+            timestamp = int(time.time() * 1000)
+            random_part = random.randint(1000, 9999)
+            temp_order_number = f"ORD-{timestamp}-{random_part}"
+
             order = OrderOrm(
                 student_id=student_id,
                 order_status=StatusOrder.IN_PROGRESS,
+                order_number=temp_order_number,
                 created_at=datetime.now(),
             )
             session.add(order)
             await session.flush()
+
+            order.order_number = f"ORD-{1000000 + order.id}"
 
             for dish_data in order_dish_data:
                 dish_data['order_id'] = order.id
@@ -774,16 +962,18 @@ class OrdersRepository:
 
             return {
                 "order_id": order.id,
+                "order_number": order.order_number,
                 "added_items": len(order_dish_data),
             }
 
     @classmethod
     async def get_dishes(cls, order_id: int = None, student_id: int = None, dish_id: int = None):
         async with new_session() as session:
-            if student_id is not None:
-                student = await session.get(StudentsOrm, student_id)
-                if not student:
-                    raise HTTPException(status_code=404, detail="Student not found")
+            # if student_id is not None:
+            #     student = await session.get(StudentsOrm, student_id)
+            #     if not student:
+            #         raise HTTPException(status_code=404, detail="Student not found")
+            # переделать
 
             query = select(OrderDishOrm).options(
                 selectinload(OrderDishOrm.dish),
@@ -799,11 +989,20 @@ class OrdersRepository:
             if dish_id is not None:
                 query = query.where(OrderDishOrm.dish_id == dish_id)
 
+            query = query.order_by(OrderOrm.order_number, OrderDishOrm.id)
+
             result = await session.execute(query)
             order_items = result.scalars().all()
 
-            return [
-                {
+            orders_dict = {}
+
+            for item in order_items:
+                order_number = item.order.order_number
+
+                if order_number not in orders_dict:
+                    orders_dict[order_number] = []
+
+                orders_dict[order_number].append({
                     "id": item.id,
                     "dish_id": item.dish_id,
                     "order_id": item.order_id,
@@ -815,9 +1014,9 @@ class OrdersRepository:
                     "total_price": item.cart_quantity * item.dish.fixed_price,
                     "img_url": item.dish.img_url,
                     "created_at": item.order.created_at,
-                }
-                for item in order_items
-            ]
+                })
+
+            return orders_dict
 
     @classmethod
     async def complete_order(cls, student_id: int):
@@ -867,13 +1066,11 @@ class OrdersRepository:
                 order_dishes = result_dishes.scalars().all()
 
                 for order_dish in order_dishes:
-                    stmt = insert(ScheduleDishesOrm).values(
-                        dish_id=order_dish.dish_id,
-                        date=today,
-                        quantity=order_dish.cart_quantity
-                    ).on_conflict_do_update(
-                        constraint='uq_dish_date',
-                        set_=dict(quantity=ScheduleDishesOrm.quantity + order_dish.cart_quantity)
+                    stmt = update(ScheduleDishesOrm).where(
+                        ScheduleDishesOrm.dish_id == order_dish.dish_id,
+                        ScheduleDishesOrm.date == today
+                    ).values(
+                        quantity=ScheduleDishesOrm.quantity + order_dish.cart_quantity
                     )
                     await session.execute(stmt)
 
@@ -892,56 +1089,111 @@ class OrdersRepository:
     @classmethod
     async def get_all_ordered_dishes(cls, institution_id: int, day: date):
         async with new_session() as session:
-            schedule_quantity_subquery = (
-                select(func.coalesce(func.sum(ScheduleDishesOrm.quantity), 0))
-                .where(ScheduleDishesOrm.dish_id == HistoryScheduleOrm.dish_id)
-                .where(ScheduleDishesOrm.date == day)
-                .scalar_subquery()
-            )
-
             query = (
-                select(
-                    HistoryScheduleOrm,
-                    (HistoryScheduleOrm.total_quantity - schedule_quantity_subquery).label("available_quantity")
-                )
+                select(ScheduleDishesOrm)
                 .join(DishesOrm)
                 .where(
-                    HistoryScheduleOrm.date == day,
+                    ScheduleDishesOrm.date == day,
                     DishesOrm.institution_id == institution_id
                 )
-                .options(joinedload(HistoryScheduleOrm.dish))
+                .options(joinedload(ScheduleDishesOrm.dish))
             )
 
             result = await session.execute(query)
-            items = result.all()
+            schedule_dishes = result.scalars().all()
 
-            if not items:
+            if not schedule_dishes:
                 raise HTTPException(
                     status_code=404,
-                    detail=f"Schedule not found"
+                    detail=f"No scheduled dishes found for date {day} and institution {institution_id}"
                 )
 
             formatted_result = []
-            for item in items:
-                history_schedule = item[0]
-                available_quantity = item[1]
-
-                final_quantity = max(available_quantity, 0)
-
+            for schedule_dish in schedule_dishes:
                 formatted_result.append({
-                    "id": history_schedule.id,
-                    "dish_id": history_schedule.dish_id,
-                    "institution_id": history_schedule.dish.institution_id,
-                    "dish_name": history_schedule.dish.dish_name,
-                    "category": history_schedule.dish.category,
-                    "total_quantity": history_schedule.total_quantity,
-                    "remains_quantity": history_schedule.total_quantity - final_quantity,
-                    "ordered_quantity": final_quantity,
-                    "fixed_price": history_schedule.dish.fixed_price,
+                    "id": schedule_dish.id,
+                    "dish_id": schedule_dish.dish_id,
+                    "institution_id": schedule_dish.dish.institution_id,
+                    "dish_name": schedule_dish.dish.dish_name,
+                    "category": schedule_dish.dish.category,
+                    "total_quantity": schedule_dish.total_quantity,
+                    "remains_quantity": schedule_dish.quantity,
+                    "ordered_quantity": schedule_dish.total_quantity - schedule_dish.quantity,
+                    "fixed_price": schedule_dish.dish.fixed_price,
                     "date": day,
-                    "img_url": history_schedule.dish.img_url,
+                    "img_url": schedule_dish.dish.img_url,
                 })
             return formatted_result
+
+    @classmethod
+    async def get_orders_with_dishes(cls, institution_id: int, target_date: date = None):
+        async with new_session() as session:
+            query = select(
+                OrderOrm.order_number,
+                OrderOrm.created_at,
+                OrderDishOrm.id,
+                OrderDishOrm.cart_quantity,
+                OrderDishOrm.order_id,
+                OrderDishOrm.dish_id,
+                DishesOrm.dish_name,
+                DishesOrm.institution_id,
+                DishesOrm.category,
+                DishesOrm.fixed_price,
+                DishesOrm.img_url
+            ).join(
+                OrderDishOrm, OrderOrm.id == OrderDishOrm.order_id
+            ).join(
+                DishesOrm, OrderDishOrm.dish_id == DishesOrm.id
+            ).order_by(
+                OrderOrm.created_at.desc(),
+                OrderOrm.order_number
+            )
+
+            if target_date is not None:
+                query = query.where(
+                and_(
+                    OrderOrm.order_status == StatusOrder.IN_PROGRESS,
+                    DishesOrm.institution_id == institution_id,
+                    func.date(OrderOrm.created_at) == target_date
+                )
+                )
+            else:
+                query = query.where(
+                and_(
+                    OrderOrm.order_status == StatusOrder.IN_PROGRESS,
+                    DishesOrm.institution_id == institution_id
+                )
+                )
+
+            result = await session.execute(query)
+            rows = result.all()
+
+            orders_dict = {}
+
+            for row in rows:
+                order_number = row.order_number
+                total_price = row.cart_quantity * row.fixed_price
+
+                item_data = {
+                    "id": row.id,
+                    "dish_id": row.dish_id,
+                    "order_id": row.order_id,
+                    "quantity": row.cart_quantity,
+                    "dish_name": row.dish_name,
+                    "institution_id": row.institution_id,
+                    "category": row.category,
+                    "fixed_price": row.fixed_price,
+                    "total_price": total_price,
+                    "img_url": row.img_url,
+                    "created_at": row.created_at
+                }
+
+                if order_number not in orders_dict:
+                    orders_dict[order_number] = []
+
+                orders_dict[order_number].append(item_data)
+
+            return orders_dict
 
 class HistoryRepository:
     @classmethod
@@ -970,6 +1222,8 @@ class HistoryRepository:
         return [
             {
                 "order_id": order.id,
+                "order_number": order.order_number,
+                "order_status": order.order_status,
                 "dishes": [
                     {
                         "dish_id": order_dish.dish.id,
@@ -984,3 +1238,41 @@ class HistoryRepository:
             }
             for order in order_items
         ]
+
+class AdminRepository:
+    @classmethod
+    async def add_client(cls, user: UserSchema, student: StudentSchema = None):
+        async with new_session() as session:
+            exists_query = select(exists().where(
+            or_(
+                UsersOrm.login == user.login,
+                UsersOrm.email == user.email
+            )
+        ))
+            result = await session.execute(exists_query)
+            existing_user = result.scalar_one_or_none()
+
+            if existing_user:
+                raise HTTPException(status_code=409, detail=f"User with login '{user.login}' or email '{user.email}' already exists")
+
+            user_orm = UsersOrm(
+                login=user.login,
+                email=user.email,
+                role=user.role.value,
+                institution_id=user.institution_id
+            )
+            if student is not None and user.role.value == "student":
+                student_orm = StudentsOrm(
+                    full_name=student.full_name,
+                    date_start=student.date_start,
+                    date_end=student.date_end,
+                    user=user_orm
+                )
+
+            session.add(user_orm)
+
+            try:
+                await session.commit()
+            except Exception as e:
+                await session.rollback()
+                raise e

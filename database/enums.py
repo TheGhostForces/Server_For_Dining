@@ -4,6 +4,7 @@ class StatusOrder(enum.Enum):
     IN_PROGRESS = "in_progress"
     CANCELLED = "cancelled"
     COMPLETED = "completed"
+    EXPIRED = "expired"
 
 class CategoryForDishes(enum.Enum):
     First = "Первое"
@@ -11,3 +12,8 @@ class CategoryForDishes(enum.Enum):
     Drink = "Напитки"
     Dessert = "Десерт"
     Snacks = "Снеки"
+
+class UserRoles(enum.Enum):
+    STUDENT = "student"
+    PROVIDER = "provider"
+    OPERATOR = "operator"

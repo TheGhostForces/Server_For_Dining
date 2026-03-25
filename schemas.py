@@ -1,10 +1,19 @@
-from typing import List, Optional
-from pydantic import BaseModel, Field
+from typing import List, Optional, Dict, Any
+from pydantic import BaseModel, Field, EmailStr
 from datetime import date, datetime
+from database.enums import UserRoles, StatusOrder
 
 
-class Student(BaseModel):
-    pass
+class UserSchema(BaseModel):
+    login: str
+    email: EmailStr
+    role: UserRoles
+    institution_id: int
+
+class StudentSchema(BaseModel):
+    full_name: str
+    date_start: date
+    date_end: date
 
 class Token(BaseModel):
     access_token: str
@@ -14,7 +23,6 @@ class DishAdd(BaseModel):
     dish_name: str
     category: str
     fixed_price: int
-    institution_id: int
     img_url: Optional[str] = None
 
 class DishUpdate(BaseModel):
@@ -37,6 +45,11 @@ class Dishes(Dish):
     dish_id: int
     quantity: int
 
+class DishesDate(DishAdd):
+    total_quantity: int
+    dish_id: int
+    quantity: int
+
 class DishesBasket(Dishes):
     total_price: int
     schedule_quantity: int
@@ -48,7 +61,7 @@ class Institution(BaseModel):
     name: str
 
 class Order(BaseModel):
-    order_id: int
+    order_number: str
     added_items: int
 
 class DishHistory(BaseModel):
@@ -61,14 +74,23 @@ class DishHistory(BaseModel):
 
 class OrderHistory(BaseModel):
     order_id: int
+    order_number: str
+    order_status: StatusOrder
     dishes: List[DishHistory]
+
+class DeleteResponseData(BaseModel):
+    deleted_count: int
+    not_found: Dict[str, Any] = {}
 
 class DishToBasket(BaseModel):
     dish_id: int
-    cart_quantity: int = Field(..., gt=0, description="Количество должно быть больше 0")
+    cart_quantity: int
 
 class DishRequest(BaseModel):
     items: List[DishToBasket]
+
+class DishCreateList(BaseModel):
+    items: List[DishAdd]
 
 class Universal(BaseModel):
     Ok: bool = True
@@ -80,19 +102,23 @@ class OrderSchema(Universal):
     Order: Order
 
 class OrdersSchema(Universal):
-    Orders: List[Orders]
+    Orders: Dict[str, List[Orders]]
+
+class OrdersSchemaName(OrdersSchema):
+    Name: str
+    Student_ID: int
 
 class DishListBasket(Universal):
     dishes: List[DishesBasket]
 
-class UniversalWithID(Universal):
-    id: int
+class DishesDateUniversal(Universal):
+    dishes: List[DishesDate]
 
 class UniversalOrderHistory(Universal):
     history: List[OrderHistory]
 
 class UniversalStudent(Universal):
-    student_id: int
+    user_id: int
     tmp_code_id: int
 
 class UniversalDish(Universal):
@@ -103,3 +129,16 @@ class UniversalListDish(Universal):
 
 class UniversalDishes(Universal):
     dishes: List[Dishes]
+
+class Result(BaseModel):
+    created_dish_ids: List[int]
+    created_count: int
+    duplicate_dishes: List[str] = []
+    duplicate_count: int = 0
+
+class UniversalWithResult(Universal):
+    Result: Result
+
+class DeleteResponse(Universal):
+    data: DeleteResponseData
+    message: str
